@@ -1,7 +1,7 @@
 package com.dlink.cdc;
 
 import com.dlink.model.FlinkCDCConfig;
-import executor.CustomTableEnvironment;
+import com.dlink.executor.CustomTableEnvironment;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 

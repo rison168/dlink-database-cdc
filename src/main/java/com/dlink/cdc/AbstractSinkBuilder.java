@@ -5,7 +5,7 @@ import com.dlink.model.Column;
 import com.dlink.model.FlinkCDCConfig;
 import com.dlink.model.Schema;
 import com.dlink.model.Table;
-import executor.CustomTableEnvironment;
+import com.dlink.executor.CustomTableEnvironment;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -22,7 +22,7 @@ import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import utils.JSONUtil;
+import com.dlink.utils.JSONUtil;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;

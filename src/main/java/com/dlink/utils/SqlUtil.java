@@ -17,7 +17,7 @@
  *
  */
 
-package utils;
+package com.dlink.utils;
 
 import com.dlink.assertion.Asserts;
 import com.dlink.model.SystemConfiguration;

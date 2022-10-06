@@ -17,7 +17,7 @@
  *
  */
 
-package executor;
+package com.dlink.executor;
 
 import com.dlink.model.LineageRel;
 import com.dlink.result.SqlExplainResult;

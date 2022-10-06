@@ -17,7 +17,7 @@
  *
  */
 
-package utils;
+package com.dlink.utils;
 
 /**
  * RunTimeUtil

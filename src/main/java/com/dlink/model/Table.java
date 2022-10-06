@@ -1,8 +1,8 @@
 package com.dlink.model;
 
 import com.dlink.assertion.Asserts;
+import com.dlink.utils.SqlUtil;
 import lombok.Data;
-import utils.SqlUtil;
 
 import java.io.Serializable;
 import java.util.ArrayList;
