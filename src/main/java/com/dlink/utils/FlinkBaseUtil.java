@@ -59,7 +59,8 @@ public class FlinkBaseUtil {
             if (i > 0) {
                 sb.append(",");
             }
-            sb.append(getColumnProcessing(table.getColumns().get(i), config)).append(" \n");
+//            sb.append(getColumnProcessing(table.getColumns().get(i), config)).append(" \n");
+            sb.append(table.getColumns().get(i).getName()).append(" \n");
         }
         sb.append(" FROM `");
         sb.append(sourceName);
@@ -84,27 +85,28 @@ public class FlinkBaseUtil {
             sb.append("` ");
             sb.append(convertSinkColumnType(type, config));
             sb.append("\n");
-            if (table.getColumns().get(i).isKeyFlag()) {
-                pks.add(table.getColumns().get(i).getName());
-            }
+//            if (table.getColumns().get(i).isKeyFlag()) {
+//                pks.add(table.getColumns().get(i).getName());
+//            }
         }
-        StringBuilder pksb = new StringBuilder("PRIMARY KEY ( ");
-        for (int i = 0; i < pks.size(); i++) {
-            if (i > 0) {
-                pksb.append(",");
-            }
-            pksb.append("`");
-            pksb.append(pks.get(i));
-            pksb.append("`");
-        }
-        pksb.append(" ) NOT ENFORCED\n");
-        if (pks.size() > 0) {
-            sb.append("    ,");
-            sb.append(pksb);
-        }
-        sb.append(") WITH (\n");
-        sb.append(getSinkConfigurationString(table, config, sinkSchemaName, sinkTableName, pkList));
-        sb.append(")\n");
+//        StringBuilder pksb = new StringBuilder("PRIMARY KEY ( ");
+//        for (int i = 0; i < pks.size(); i++) {
+//            if (i > 0) {
+//                pksb.append(",");
+//            }
+//            pksb.append("`");
+//            pksb.append(pks.get(i));
+//            pksb.append("`");
+//        }
+//        pksb.append(" ) NOT ENFORCED\n");
+//        if (pks.size() > 0) {
+//            sb.append("    ,");
+//            sb.append(pksb);
+//        }
+          sb.append(" ) \n");
+//        sb.append(") WITH (\n");
+//        sb.append(getSinkConfigurationString(table, config, sinkSchemaName, sinkTableName, pkList));
+//        sb.append(")\n");
         return sb.toString();
     }
 
@@ -118,11 +120,11 @@ public class FlinkBaseUtil {
     }
 
     public static String convertSinkColumnType(String type, FlinkCDCConfig config) {
-        if (config.getSink().get("connector").equals("hudi")) {
-            if (type.equals("TIMESTAMP")) {
-                return "TIMESTAMP(3)";
-            }
-        }
+//        if (config.getSink().get("connector").equals("hudi")) {
+//            if (type.equals("TIMESTAMP")) {
+//                return "TIMESTAMP(3)";
+//            }
+//        }
         return type;
     }
 

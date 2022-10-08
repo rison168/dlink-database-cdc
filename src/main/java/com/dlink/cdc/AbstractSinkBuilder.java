@@ -1,22 +1,24 @@
 package com.dlink.cdc;
 
 import com.dlink.assertion.Asserts;
-import com.dlink.model.Column;
-import com.dlink.model.FlinkCDCConfig;
-import com.dlink.model.Schema;
-import com.dlink.model.Table;
+import com.dlink.model.*;
 import com.dlink.executor.CustomTableEnvironment;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.java.typeutils.RowTypeInfo;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 import org.apache.flink.table.data.*;
 import org.apache.flink.table.operations.ModifyOperation;
 import org.apache.flink.table.types.logical.*;
+import org.apache.flink.table.types.utils.TypeConversions;
+import org.apache.flink.types.Row;
 import org.apache.flink.types.RowKind;
 import org.apache.flink.util.Collector;
 import org.apache.flink.util.OutputTag;
@@ -91,7 +93,7 @@ public abstract class AbstractSinkBuilder {
             @Override
             public boolean filter(Map map) throws Exception {
                 final LinkedHashMap source = (LinkedHashMap) map.get("source");
-                return name.equals(source.get(table).toString()) && schema.equals(source.get(schemaFieldName).toString());
+                return name.equals(source.get("table").toString()) && schema.equals(source.get(schemaFieldName).toString());
             }
         });
     }
@@ -104,21 +106,25 @@ public abstract class AbstractSinkBuilder {
         return singleOutputStreamOperator.getSideOutput(tag);
     }
 
-    protected DataStream<RowData> buildRowData(
+    protected DataStream<Row> buildRowData(
             SingleOutputStreamOperator<Map> filterOperator,
             List<String> columnNameList,
             List<LogicalType> columnTypeList,
             String schemaTableName
     ) {
-        return filterOperator.flatMap(new FlatMapFunction<Map, RowData>() {
+        final String[] columnNames = columnNameList.toArray(new String[columnNameList.size()]);
+        final LogicalType[] columnTypes = columnTypeList.toArray(new LogicalType[columnTypeList.size()]);
+        TypeInformation<?>[] typeInformations = TypeConversions.fromDataTypeToLegacyInfo(TypeConversions.fromLogicalToDataType(columnTypes));
+        RowTypeInfo rowTypeInfo = new RowTypeInfo(typeInformations, columnNames);
+        return filterOperator.flatMap(new FlatMapFunction<Map, Row>() {
             @Override
-            public void flatMap(Map map, Collector<RowData> collector) throws Exception {
+            public void flatMap(Map map, Collector<Row> collector) throws Exception {
                 try {
                     switch (map.get("op").toString()) {
                         case "r":
                         case "c":
-                            GenericRowData insertGenericRowData = new GenericRowData(columnNameList.size());
-                            insertGenericRowData.setRowKind(RowKind.INSERT);
+                            Row insertGenericRowData = Row.withPositions(columnNameList.size());
+                            insertGenericRowData.setKind(RowKind.INSERT);
                             final Map insertData = (Map) map.get("after");
                             for (int i = 0; i < columnNameList.size(); i++) {
                                 insertGenericRowData.setField(i, convertValue(insertData.get(columnNameList.get(i)), columnTypeList.get(i)));
@@ -126,8 +132,8 @@ public abstract class AbstractSinkBuilder {
                             collector.collect(insertGenericRowData);
                             break;
                         case "d":
-                            GenericRowData deleteGenericRowData = new GenericRowData(columnNameList.size());
-                            deleteGenericRowData.setRowKind(RowKind.DELETE);
+                            Row deleteGenericRowData = Row.withPositions(columnNameList.size());
+                            deleteGenericRowData.setKind(RowKind.DELETE);
                             final Map deleteData = (Map) map.get("before");
                             for (int i = 0; i < columnNameList.size(); i++) {
                                 deleteGenericRowData.setField(i, convertValue(deleteData.get(columnNameList.get(i)), columnTypeList.get(i)));
@@ -135,16 +141,16 @@ public abstract class AbstractSinkBuilder {
                             collector.collect(deleteGenericRowData);
                             break;
                         case "u":
-                            GenericRowData updateBeforeGenericRowData = new GenericRowData(columnNameList.size());
-                            updateBeforeGenericRowData.setRowKind(RowKind.UPDATE_BEFORE);
+                            Row updateBeforeGenericRowData = Row.withPositions(columnNameList.size());
+                            updateBeforeGenericRowData.setKind(RowKind.UPDATE_BEFORE);
                             final Map updateBeforeData = (Map) map.get("before");
                             for (int i = 0; i < columnNameList.size(); i++) {
                                 updateBeforeGenericRowData.setField(i, convertValue(updateBeforeData.get(columnNameList.get(i)), columnTypeList.get(i)));
                             }
                             collector.collect(updateBeforeGenericRowData);
 
-                            GenericRowData updateAfterGenericRowData = new GenericRowData(columnNameList.size());
-                            updateBeforeGenericRowData.setRowKind(RowKind.UPDATE_BEFORE);
+                            Row updateAfterGenericRowData = Row.withPositions(columnNameList.size());
+                            updateBeforeGenericRowData.setKind(RowKind.UPDATE_BEFORE);
                             final Map updateAfterData = (Map) map.get("after");
                             for (int i = 0; i < columnNameList.size(); i++) {
                                 updateAfterGenericRowData.setField(i, convertValue(updateAfterData.get(columnNameList.get(i)), columnTypeList.get(i)));
@@ -157,43 +163,70 @@ public abstract class AbstractSinkBuilder {
                     throw e;
                 }
             }
-        });
+        },rowTypeInfo);
 
     }
 
     public abstract void addSink(
             StreamExecutionEnvironment env,
-            DataStream<RowData> rowDataDataStream,
+            DataStream<Row> rowDataDataStream,
             Table table,
             List<String> columnNameList,
             List<LogicalType> columnTypeList);
 
     public DataStreamSource build(
-            CDCBuilder cdcBuilder,
             StreamExecutionEnvironment env,
-            CustomTableEnvironment customTableEnvironment,
             DataStreamSource<String> dataStreamSource) {
 
-        final List<Schema> schemaList = config.getSchemaList();
+//        final List<Schema> schemaList = config.getSchemaList();
         final String schemaFieldName = config.getSchemaFieldName();
 
-        if (Asserts.isNotNullCollection(schemaList)) {
-            SingleOutputStreamOperator<Map> mapOperator = deserialize(dataStreamSource);
-            for (Schema schema : schemaList) {
-                for (Table table : schema.getTables()) {
-                    SingleOutputStreamOperator<Map> filterOperator = shunt(mapOperator, table, schemaFieldName);
+//        if (Asserts.isNotNullCollection(schemaList)) {
+//            SingleOutputStreamOperator<Map> mapOperator = deserialize(dataStreamSource);
+//            for (Schema schema : schemaList) {
+//                for (Table table : schema.getTables()) {
+//                    SingleOutputStreamOperator<Map> filterOperator = shunt(mapOperator, table, schemaFieldName);
+//
+//                    List<String> columnNameList = new ArrayList<>();
+//                    List<LogicalType> columnTypeList = new ArrayList<>();
+//
+//                    buildColumn(columnNameList, columnTypeList, table.getColumns());
+//
+//                    DataStream<RowData> rowDataDataStream = buildRowData(filterOperator, columnNameList, columnTypeList, table.getSchemaTableName());
+//
+//                    addSink(env, rowDataDataStream, table, columnNameList, columnTypeList);
+//                }
+//            }
+//        }
+        final Table table = new Table();
+        List<Column> columns = new ArrayList<>();
+        columns.add(new Column("id", "int", ColumnType.INTEGER));
+        columns.add(new Column("name", "string", ColumnType.STRING));
+        columns.add(new Column("description", "string", ColumnType.STRING));
+        table.setColumns(columns);
+        table.setName(config.getTable());
+        table.setSchema(config.getSchema());
 
-                    List<String> columnNameList = new ArrayList<>();
-                    List<LogicalType> columnTypeList = new ArrayList<>();
 
-                    buildColumn(columnNameList, columnTypeList, table.getColumns());
 
-                    DataStream<RowData> rowDataDataStream = buildRowData(filterOperator, columnNameList, columnTypeList, table.getSchemaTableName());
+        SingleOutputStreamOperator<Map> mapOperator = deserialize(dataStreamSource);
+        SingleOutputStreamOperator<Map> filterOperator = shunt(mapOperator, table, schemaFieldName);
 
-                    addSink(env, rowDataDataStream, table, columnNameList, columnTypeList);
-                }
-            }
-        }
+        List<String> columnNameList = new ArrayList<>();
+        columnNameList.add("id");
+        columnNameList.add("name");
+        columnNameList.add("description");
+        List<LogicalType> columnTypeList = new ArrayList<>();
+        columnTypeList.add(new IntType());
+        columnTypeList.add(new CharType());
+        columnTypeList.add(new CharType());
+
+//        buildColumn(columnNameList, columnTypeList, table.getColumns());
+
+        DataStream<Row> rowDataDataStream = buildRowData(filterOperator, columnNameList, columnTypeList, schemaFieldName);
+
+        addSink(env, rowDataDataStream, table, columnNameList, columnTypeList);
+
         return dataStreamSource;
     }
 

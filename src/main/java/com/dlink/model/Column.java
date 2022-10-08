@@ -29,6 +29,8 @@ public class Column implements Serializable {
     private String characterSet;
     private String collation;
 
+    public Column(String name, String type, ColumnType javaType) {this.name = name; this.type = type; this.javaType = javaType;}
+
     public String getFlinkType() {
         String flinkType = javaType.getFlinkType();
         if (flinkType.equals("DECIMAL")) {

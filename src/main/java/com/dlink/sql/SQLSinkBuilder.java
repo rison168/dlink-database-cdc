@@ -8,6 +8,7 @@ import com.dlink.model.FlinkCDCConfig;
 import com.dlink.model.Table;
 import com.dlink.utils.FlinkBaseUtil;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -20,6 +21,7 @@ import org.apache.flink.table.api.bridge.java.internal.StreamTableEnvironmentImp
 import org.apache.flink.table.api.internal.TableEnvironmentImpl;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.logical.LogicalType;
+import org.apache.flink.types.Row;
 
 import java.io.Serializable;
 import java.time.ZoneId;
@@ -40,25 +42,49 @@ public class SQLSinkBuilder extends AbstractSinkBuilder implements SinkBuilder, 
     public SQLSinkBuilder() {
     }
 
-    private SQLSinkBuilder(FlinkCDCConfig config) {
+    public SQLSinkBuilder(FlinkCDCConfig config) {
         super(config);
     }
 
 
     @Override
-    public void addSink(StreamExecutionEnvironment env, DataStream<RowData> rowDataDataStream, Table table, List<String> columnNameList, List<LogicalType> columnTypeList) {
+    public void addSink(StreamExecutionEnvironment env, DataStream<Row> rowDataDataStream, Table table, List<String> columnNameList, List<LogicalType> columnTypeList) {
         EnvironmentSettings settings = EnvironmentSettings.newInstance().useBlinkPlanner().inStreamingMode().build();
-        final StreamTableEnvironment tblEnv = StreamTableEnvironmentImpl.create(env, settings, TableConfig.getDefault());
-        final String sinkSchemaName = getSinkSchemaName(table);
-        final String sinkTableName = getSinkTableName(table);
+        TableConfig tableConfig = new TableConfig();
+        tableConfig.addConfiguration(settings.toConfiguration());
+        final StreamTableEnvironment tblEnv = StreamTableEnvironmentImpl.create(env, settings, tableConfig);
+
+        final Configuration configuration = tblEnv.getConfig().getConfiguration();
+        configuration.setBoolean("table.dynamic-table-options.enabled", true);
+        configuration.setString("execution.type", "streaming");
+        String catalogSQL = "CREATE CATALOG iceberg_catalog WITH (\n" +
+                "  'type'='iceberg',\n" +
+                "  'catalog-type'='hive',\n" +
+                "  'uri'='thrift://tbds-192-168-0-18:9083,thrift://tbds-192-168-0-29:9083',\n" +
+                "  'clients'='5',\n" +
+                "  'property-version'='1',\n" +
+                "  'warehouse'='hdfs:///apps/hive/warehouse'\n" +
+                ")";
+        tblEnv.executeSql(catalogSQL);
+        tblEnv.useCatalog("iceberg_catalog");
+        tblEnv.useDatabase("rison_db");
+
+        final String sinkSchemaName = "rison_db";
+        final String sinkTableName = "iceberg_tbl_student";
         final String pkList = StringUtils.join(getPKList(table), ".");
         final String viewName = "view_" + table.getSchemaTableNameWithUnderline();
-        tblEnv.createTemporaryView(viewName, rowDataDataStream, StringUtils.join(columnNameList, ","));
+        System.out.println(viewName);
+        System.out.println(StringUtils.join(columnNameList, ","));
+        rowDataDataStream.print();
+        tblEnv.createTemporaryView(viewName, rowDataDataStream, StringUtils.join(columnNameList, ",") );
         logger.info("Create " + viewName + " tableView successful!");
+
         String flinkDDL = FlinkBaseUtil.getFlinkDDL(table, sinkTableName, config, sinkSchemaName, sinkTableName, pkList);
         tblEnv.executeSql(flinkDDL);
         logger.info("Create " + sinkTableName + " FlinkSQL DDL successful!");
+        System.out.println(flinkDDL);
         String cdcSqlInsert = FlinkBaseUtil.getCDCSqlInsert(table, sinkTableName, viewName, config);
+        System.out.println(cdcSqlInsert);
         tblEnv.executeSql(cdcSqlInsert);
         logger.info(cdcSqlInsert);
         logger.info("Create " + sinkTableName + " FlinkSQL insert into successful!");
@@ -74,8 +100,9 @@ public class SQLSinkBuilder extends AbstractSinkBuilder implements SinkBuilder, 
         return new SQLSinkBuilder(config);
     }
 
+
     @Override
-    public DataStreamSource build(CDCBuilder cdcBuilder, StreamExecutionEnvironment env, CustomTableEnvironment customTableEnvironment, DataStreamSource<String> dataStreamSource) {
-        return super.build(cdcBuilder, env, customTableEnvironment, dataStreamSource);
+    public DataStreamSource build(StreamExecutionEnvironment env, DataStreamSource<String> dataStreamSource) {
+        return super.build(env, dataStreamSource);
     }
 }
